@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nnlayer"
+version = "0.0.0"
+description = ""
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { text = "MIT" }
+authors = [
+    { name = "Asher Merrill", email = "asher.s.merrill@gmail.com" },
+]
+dependencies = [
+    "numpy>=2",
+    "torch>=2.11",
+]
+
+[project.optional-dependencies]
+doc = [
+    "sphinx",
+    "furo",
+    "myst-nb",
+    "jupyter",
+    "jupyterlab",
+    "matplotlib",
+]
+tutorial = [
+    "jupyter",
+    "jupyterlab",
+    "matplotlib",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://asher-m.github.io/nnlayer"
+Source = "https://github.com/asher-m/nnlayer"
+
+[tool.setuptools]
+package-dir = { "" = "." }
+packages = ["nnlayer"]
