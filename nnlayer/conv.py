@@ -171,43 +171,53 @@ class DiffConvCubicBSpline(nn.Module):
         ya = coord - 1 - 1/2 - yi[:, None]
         yb = coord - 1 + 1/2 - yi[:, None]
 
-        wt = DiffConvCubicBSpline._K_core(tb) - DiffConvCubicBSpline._K_core(ta)
-        wx = DiffConvCubicBSpline._K_core(xb) - DiffConvCubicBSpline._K_core(xa)
-        wy = DiffConvCubicBSpline._K_core(yb) - DiffConvCubicBSpline._K_core(ya)
+        wt = DiffConvCubicBSpline.b(ta, tb)
+        wx = DiffConvCubicBSpline.b(xa, xb)
+        wy = DiffConvCubicBSpline.b(ya, yb)
 
         w = wt[:, :, None, None] * wx[:, None, :, None] * wy[:, None, None, :]
 
         return torch.einsum('bcnm,bcnm->b', data, w)
 
     @staticmethod
-    def _K_core(
-        b: torch.Tensor
+    def b(
+        x_a: torch.Tensor,
+        x_b: torch.Tensor
     ):
         """
-        Compute the integral of the cubic B-spline from -inf to b.
+        Compute the intergral of the cubic B-spline from x_a to x_b.
         """
-        if b.ndim > 2:
-            raise ValueError(f'Expected b.ndim < 3, got {b.ndim}!')
+        return DiffConvCubicBSpline._b_half(x_b) - DiffConvCubicBSpline._b_half(x_a)
 
-        idx_0 = b < -1
-        idx_1 = torch.logical_and(-1 <= b, b < -0.5)
-        idx_2 = torch.logical_and(-0.5 <= b, b < 0.5)
-        idx_3 = torch.logical_and(0.5 <= b, b < 1.)
+    @staticmethod
+    def _b_half(
+        x: torch.Tensor
+    ):
+        """
+        Compute the integral of the cubic B-spline from -inf to x.
+        """
+        if x.ndim > 2:
+            raise ValueError(f'Expected b.ndim < 3, got {x.ndim}!')
 
-        out_1 = -2/3 * b**4 + (8/3) * b**3 - 4 * b**2 + (8/3) * b + (4/3) * torch.clamp(b, max=0)**4 + 8 * torch.clamp(b, max=0)**2 + 2/3
-        out_2 = 1 / 24 + 2 * b**4 - 8/3 * b**3 + (4/3) * b - 4 * torch.clamp(b, max=0)**4 + 11/24
-        out_3 = 23 / 24 - 2/3 * b**4 + (8/3) * b**3 - 4 * b**2 + (8/3) * b - 5/8
+        idx_0 = x < -1
+        idx_1 = torch.logical_and(-1 <= x, x < -0.5)
+        idx_2 = torch.logical_and(-0.5 <= x, x < 0.5)
+        idx_3 = torch.logical_and(0.5 <= x, x < 1.)
+
+        out_1 = -2/3 * x**4 + (8/3) * x**3 - 4 * x**2 + (8/3) * x + (4/3) * torch.clamp(x, max=0)**4 + 8 * torch.clamp(x, max=0)**2 + 2/3
+        out_2 = 1 / 24 + 2 * x**4 - 8/3 * x**3 + (4/3) * x - 4 * torch.clamp(x, max=0)**4 + 11/24
+        out_3 = 23 / 24 - 2/3 * x**4 + (8/3) * x**3 - 4 * x**2 + (8/3) * x - 5/8
 
         return torch.where(
             idx_0,
-            torch.zeros_like(b),
+            torch.zeros_like(x),
             torch.where(
                 idx_1,
                 out_1,
                 torch.where(
                     idx_2,
                     out_2,
-                    torch.where(idx_3, out_3, torch.ones_like(b))
+                    torch.where(idx_3, out_3, torch.ones_like(x))
                 )
             )
         )
