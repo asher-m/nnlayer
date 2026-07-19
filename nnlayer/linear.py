@@ -20,7 +20,9 @@ class LocallyConnected2d(nn.Module):
             stride: int = 1,
     ):
         """
-        Initializes a locally-connected 2d layer.
+        Applies a local compactly-supported affine transformation to the
+        incoming data, suitable for emulating a global affine transformation when
+        the data are too large for a dense transformation.
 
         This is a simple implementation that I can expand later if I want or need.
 

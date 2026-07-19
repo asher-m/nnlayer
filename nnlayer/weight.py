@@ -13,8 +13,7 @@ class GaussianDistanceWeight(nn.Module):
             *coordinates: tuple[torch.Tensor]
     ):
         """
-        Compute the Gaussian weight across an array of coordinates to a point x.  Outputs
-        an array of weights.
+        Compute the Gaussian weight across an array of coordinates to a point x.
 
         Args:
             coordinates:        Tuple of 1-d tensors of coordinate ranges.  Coordinate ranges are usually

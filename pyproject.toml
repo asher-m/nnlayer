@@ -30,7 +30,8 @@ tutorial = [
     "jupyterlab",
     "matplotlib",
 ]
-test = [
+dev = [
+    "ipython",
     "pytest",
     "pytest-cov",
 ]

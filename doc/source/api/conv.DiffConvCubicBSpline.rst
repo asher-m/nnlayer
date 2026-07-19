@@ -1,0 +1,4 @@
+DiffConvCubicBSpline
+====================
+
+.. autoclass:: nnlayer.DiffConvCubicBSpline
