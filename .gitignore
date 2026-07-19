@@ -2,6 +2,9 @@
 **/.ipynb_checkpoints/
 
 .*/
+!.github/
+!.github/workflows/
+!.github/workflows/**
 *.egg-info/
 *.pyc
 
