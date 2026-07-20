@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    'sphinx.ext.autosummary',
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
@@ -35,6 +36,8 @@ exclude_patterns = []
 
 # -- extension configuration -------------------------------------------------
 
+autosummary_generate = True
+autosummary_imported_members = True
 autodoc_typehints = 'description'
 autoclass_content = 'both'
 autodoc_mock_imports = ['torch']

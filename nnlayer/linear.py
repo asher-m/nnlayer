@@ -1,3 +1,10 @@
+"""
+Linear (fully-connected) layers and helpers.
+
+Formally speaking, these transformations are *affine* linear,
+but "linear" is the prevailing terminology, so we use that here, too. 
+"""
+
 import functools
 import torch
 import torch.nn as nn
@@ -20,9 +27,8 @@ class LocallyConnected2d(nn.Module):
             stride: int = 1,
     ):
         """
-        Applies a local compactly-supported affine transformation to the
-        incoming data, suitable for emulating a global affine transformation when
-        the data are too large for a dense transformation.
+        Applies a local affine transformation to the data, suitable for emulating
+        a global affine transformation when the data are too large for a dense transformation.
 
         This is a simple implementation that I can expand later if I want or need.
 

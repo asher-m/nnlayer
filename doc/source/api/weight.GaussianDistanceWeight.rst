@@ -1,4 +1,0 @@
-GaussianDistanceWeight
-======================
-
-.. autoclass:: nnlayer.GaussianDistanceWeight

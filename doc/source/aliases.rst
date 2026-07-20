@@ -1,6 +1,9 @@
 Aliases in nnlayer
 ==================
 
+.. seealso::
+   See the :doc:`nnlayer API reference <api/nnlayer>` for more information on the nnlayer namespace.
+
 Convolution Layers
 ------------------
 
@@ -12,7 +15,7 @@ Convolution Layers
    * - Alias
      - Submodule path
    * - :class:`nnlayer.DiffConvCubicBSpline`
-     - ``nnlayer.conv.DiffConvCubicBSpline``
+     - :class:`nnlayer.conv.DiffConvCubicBSpline`
 
 
 Linear Layers
@@ -26,7 +29,7 @@ Linear Layers
    * - Alias
      - Submodule path
    * - :class:`nnlayer.LocallyConnected2d`
-     - ``nnlayer.linear.LocallyConnected2d``
+     - :class:`nnlayer.linear.LocallyConnected2d`
 
 
 Weight Layers
@@ -40,4 +43,4 @@ Weight Layers
    * - Alias
      - Submodule path
    * - :class:`nnlayer.GaussianDistanceWeight`
-     - ``nnlayer.weight.GaussianDistanceWeight``
+     - :class:`nnlayer.weight.GaussianDistanceWeight`

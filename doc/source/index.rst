@@ -18,9 +18,19 @@ serving to enable algorithms to better learn target problems.
    :maxdepth: 1
 
    self
-   Getting Started <getting-started>
-   Aliases in nnlayer <aliases>
-   API Reference <api>
+   getting-started
+   conv
+   linear
+   weight
+
+
+.. toctree::
+   :caption: API Reference
+   :hidden:
+   :maxdepth: 1
+
+   aliases
+   api/nnlayer
 
 
 .. toctree::
@@ -28,8 +38,8 @@ serving to enable algorithms to better learn target problems.
    :hidden:
    :maxdepth: 1
 
-   Documentation <documentation>
-   Development <development>
+   documentation
+   development
    These Docs <https://asher-m.github.io/nnlayer>
    nnlayer on Github <https://github.com/asher-m/nnlayer>
    Asher Merrill's Personal Site <https://asher-m.github.io/>

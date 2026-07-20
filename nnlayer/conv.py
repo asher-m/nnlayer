@@ -1,3 +1,7 @@
+"""
+Convolutional layers and helpers.
+"""
+
 import torch
 import torch.nn as nn
 
