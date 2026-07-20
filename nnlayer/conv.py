@@ -6,6 +6,21 @@ import torch
 import torch.nn as nn
 
 
+def seperable_contraction(data, *vecs):
+    # d.shape == coordinate_shape
+    # vecs[k].shape == (coordinate_shape[k],)
+    for v in reversed(vecs):
+        data = data @ v
+    return data
+
+
+def seperable_contraction_batched(data, vectors):
+    return torch.vmap(
+        seperable_contraction,
+        in_dims=(0, *([0] * len(vectors))),
+    )(data, *vectors)
+
+
 class DiffConvCubicBSpline(nn.Module):
     def __init__(
             self,
