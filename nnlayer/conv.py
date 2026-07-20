@@ -2,15 +2,15 @@
 Convolutional layers and helpers.
 """
 
+import functools
 import torch
 import torch.nn as nn
 
 
-def seperable_contraction(data, *vecs):
+def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
     r"""
     Contracts ``data`` against a weighting tensor defined by a sequence of
     one-dimensional vectors.
-
 
     Let a weighting tensor :math:`W` given by the tensor product of
     :math:`\texttt{vectors} = \{ u, v, w, \dots \}`,
@@ -24,31 +24,46 @@ def seperable_contraction(data, *vecs):
         \texttt{result} = \langle W,\, \texttt{data} \rangle.
 
     Attention:
-        This method is **unsuitable** for contractions by batched weighting
-        tensors.
+        This method is **unsuitable** for contractions by batched weighting tensors.
 
-        To perform contractions of this type, see
-        :func:`seperable_contraction_batched`.
+        This method is intended to be used for batched or unbatched data and
+        **unbatched** weighting tensors.
+
+        To perform contractions of **batched** data and **batched** weighting tensors,
+        see :func:`seperable_contraction_batched`.
 
     Args:
         data (torch.Tensor):
             Tensor with shape matching the coordinate dimensions represented by
-            ``vecs``.
-        vecs (torch.Tensor):
+            ``vectors``.
+        vectors (torch.Tensor):
             One-dimensional tensors used for successive contractions.
+
+    Shape:
+        Let ``data`` have shape ``(*out_shape, e_1, e_2, ..., e_k)``, then
+        ``vectors[i]`` must be of shape ``(e_i,)``. The result will be
+        of shape ``out_shape``.
 
     Returns:
         torch.Tensor:
             Tensor resulting from contracting ``data`` over each supplied vector.
     """
     # d.shape == coordinate_shape
-    # vecs[k].shape == (coordinate_shape[k],)
-    for v in reversed(vecs):
+    # vectors[k].shape == (coordinate_shape[k],)
+    for i, v in enumerate(vectors):
+        if v.shape != (data.shape[i - len(vectors)],):
+            raise ValueError(
+                f'Got vectors of incompatible shape: '
+                f'vector {i} of shape {(*v.shape,)}, '
+                f'expected {(data.shape[i - len(vectors)],)}!'
+            )
+
+    for v in reversed(vectors):
         data = data @ v
     return data
 
 
-def seperable_contraction_batched(data, vectors):
+def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
     r"""
     Applies :func:`seperable_contraction` over a batch of tensors and vectors.
 
@@ -67,8 +82,13 @@ def seperable_contraction_batched(data, vectors):
     Args:
         data (torch.Tensor):
             Batched tensor whose leading dimension indexes the batch.
-        vectors (Sequence[torch.Tensor]):
-            Sequence of batched one-dimensional tensors used for contraction.
+        vectors (torch.Tensor):
+            Batched one-dimensional tensors used for contraction.
+
+    Shape:
+        Let ``data`` have shape ``(*batch_shape, e_1, e_2, ..., e_k)``, then
+        ``vectors[i]`` must be of shape ``(*batch_shape, e_i)``. The result will be
+        of shape ``batch_shape``.
 
     Returns:
         torch.Tensor:
@@ -78,10 +98,27 @@ def seperable_contraction_batched(data, vectors):
         See :func:`seperable_contraction` for a contraction of **one** (i.e.,
         unbatched) weighting tensor against ``data``.
     """
-    return torch.vmap(
+    batch_shape = data.shape[:-len(vectors)]
+    flat_shape = functools.reduce(lambda x, y: x * y, batch_shape)
+
+    for i, v in enumerate(vectors):
+        if v.shape != (*batch_shape, data.shape[i - len(vectors)]):
+            raise ValueError(
+                f'Got vectors of shape incompatible with data: '
+                f'vector {i} of shape {(*v.shape,)}, '
+                f'expected {(*batch_shape, data.shape[i - len(vectors)])}!'
+            )
+
+    data = torch.vmap(
         seperable_contraction,
         in_dims=(0, *([0] * len(vectors))),
-    )(data, *vectors)
+    )(
+        data.reshape((flat_shape, *data.shape[-len(vectors):])),
+        *(v.reshape((flat_shape, v.shape[-1])) for v in vectors)
+    )
+    data = data.reshape(batch_shape)
+
+    return data
 
 
 class DiffConvCubicBSpline(nn.Module):
