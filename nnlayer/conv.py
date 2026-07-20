@@ -7,6 +7,40 @@ import torch.nn as nn
 
 
 def seperable_contraction(data, *vecs):
+    r"""
+    Contracts ``data`` against a weighting tensor defined by a sequence of
+    one-dimensional vectors.
+
+
+    Let a weighting tensor :math:`W` given by the tensor product of
+    :math:`\texttt{vectors} = \{ u, v, w, \dots \}`,
+
+    .. math::
+        W = u \otimes v \otimes w \otimes \dots
+
+    This computes the contraction of :math:`W` with ``data``:
+
+    .. math::
+        \texttt{result} = \langle W,\, \texttt{data} \rangle.
+
+    Attention:
+        This method is **unsuitable** for contractions by batched weighting
+        tensors.
+
+        To perform contractions of this type, see
+        :func:`seperable_contraction_batched`.
+
+    Args:
+        data (torch.Tensor):
+            Tensor with shape matching the coordinate dimensions represented by
+            ``vecs``.
+        vecs (torch.Tensor):
+            One-dimensional tensors used for successive contractions.
+
+    Returns:
+        torch.Tensor:
+            Tensor resulting from contracting ``data`` over each supplied vector.
+    """
     # d.shape == coordinate_shape
     # vecs[k].shape == (coordinate_shape[k],)
     for v in reversed(vecs):
@@ -15,6 +49,35 @@ def seperable_contraction(data, *vecs):
 
 
 def seperable_contraction_batched(data, vectors):
+    r"""
+    Applies :func:`seperable_contraction` over a batch of tensors and vectors.
+
+    Let a **batched** weighting tensor :math:`W` given by the tensor product of
+    **batched** :math:`\texttt{vectors}_b = \{ u_b, v_b, w_b, \dots \}`,
+
+    .. math::
+        W_b = u_b \otimes v_b \otimes w_b \otimes \dots
+
+    This computes the contraction of :math:`W` with ``data`` in **non-batch**
+    dimensions:
+
+    .. math::
+        \texttt{result}_b = \langle W_b,\, \texttt{data}_b \rangle.
+
+    Args:
+        data (torch.Tensor):
+            Batched tensor whose leading dimension indexes the batch.
+        vectors (Sequence[torch.Tensor]):
+            Sequence of batched one-dimensional tensors used for contraction.
+
+    Returns:
+        torch.Tensor:
+            Batched contraction result.
+
+    See Also:
+        See :func:`seperable_contraction` for a contraction of **one** (i.e.,
+        unbatched) weighting tensor against ``data``.
+    """
     return torch.vmap(
         seperable_contraction,
         in_dims=(0, *([0] * len(vectors))),
@@ -22,23 +85,27 @@ def seperable_contraction_batched(data, vectors):
 
 
 class DiffConvCubicBSpline(nn.Module):
+    """
+    Differentiable cubic B-spline convolution module.
+    """
+
     def __init__(
             self,
             n_coordinates: int,
     ):
         r"""
-        Applies a cubic B-spline convolution to data that is differentiable with
-        respect to the evaluation coordinates.
+        Applies a cubic B-spline convolution that is differentiable with respect
+        to the evaluation coordinates.
 
-        Qualitatively speaking, this produces a differentiable quasi-interpolant of
-        the data evaluated at provided collocation points.
+        This module computes a differentiable quasi-interpolant of data evaluated
+        at supplied collocation points.
 
         Args:
-            n_coordinates (int): Number of coordinates.
+            n_coordinates (int):
+                Number of coordinate dimensions.
 
-        In general, this method computes the convolution of a smooth cubic B-spline
-        kernel against some data.  Consider some (not necessarily smooth) function
-        representing data
+        In general, this module computes the convolution of a smooth cubic B-spline
+        kernel against data. Consider a function representing data
 
         .. math::
             f : \Omega \rightarrow \mathbb{R}
@@ -49,7 +116,7 @@ class DiffConvCubicBSpline(nn.Module):
         For notational convenience, let
         :math:`N = \operatorname{dim}(\Omega) = \texttt{n\_coordinates}`.
 
-        This method computes the convolution
+        The module computes the convolution
 
         .. math::
             [k \star f](\mathbf{x}) =
@@ -83,12 +150,12 @@ class DiffConvCubicBSpline(nn.Module):
         .. math::
             \Gamma = \prod_{\mu=1}^N \Gamma_\mu \subset \Omega
                 \qquad \text{where} \qquad \Gamma_\mu = \{ x_\mu^i \}_{i=1}^{N_\mu}
-        
-        such that each coordinate has regular spacing, 
-        
+
+        such that each coordinate has regular spacing,
+
         .. math::
             \Delta x_\mu =  x_\mu^{i+1} -  x_\mu^i
-        
+
         independent of :math:`i`. The grid spacing need not be isotropic;
         that is :math:`\Delta x_\mu` need not equal :math:`\Delta x_\nu` for
         :math:`\mu \neq \nu`.
@@ -98,12 +165,12 @@ class DiffConvCubicBSpline(nn.Module):
 
         .. math::
             w_\mu(x_\mu) = \begin{bmatrix}
-                \displaystyle \int_{x_\mu^1 - \Delta x_\mu / 2}^{x_\mu^1 + \Delta x_\mu / 2} 
+                \displaystyle \int_{x_\mu^1 - \Delta x_\mu / 2}^{x_\mu^1 + \Delta x_\mu / 2}
                     b(s - x_\mu; \Delta x_\mu) ds \\
-                \displaystyle \int_{x_\mu^2 - \Delta x_\mu / 2}^{x_\mu^2 + \Delta x_\mu / 2} 
+                \displaystyle \int_{x_\mu^2 - \Delta x_\mu / 2}^{x_\mu^2 + \Delta x_\mu / 2}
                     b(s - x_\mu; \Delta x_\mu) ds \\
                 \vdots \\
-                \displaystyle \int_{x_\mu^{N_\mu} - \Delta x_\mu / 2}^{x_\mu^{N_\mu} + \Delta x_\mu / 2} 
+                \displaystyle \int_{x_\mu^{N_\mu} - \Delta x_\mu / 2}^{x_\mu^{N_\mu} + \Delta x_\mu / 2}
                     b(s - x_\mu; \Delta x_\mu) ds
             \end{bmatrix}.
 
@@ -112,7 +179,7 @@ class DiffConvCubicBSpline(nn.Module):
         .. math::
             K(\mathbf{x}) = \bigotimes_{\mu=1}^N w_\mu(x_\mu).
 
-        Then, the discrete convolution is the full contraction of the data :math:`f` with the
+        The discrete convolution is the full contraction of the data :math:`f` with the
         weighting tensor :math:`K`, as
 
         .. math::
