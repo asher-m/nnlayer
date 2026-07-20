@@ -10,11 +10,6 @@ import torch
 import torch.nn as nn
 
 
-__all__ = [
-    "LocallyConnected2d"
-]
-
-
 class LocallyConnected2d(nn.Module):
     def __init__(
             self,

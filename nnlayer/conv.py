@@ -6,11 +6,6 @@ import torch
 import torch.nn as nn
 
 
-__all__ = [
-    "DiffConvCubicBSpline"
-]
-
-
 class DiffConvCubicBSpline(nn.Module):
     def __init__(
             self,

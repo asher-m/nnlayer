@@ -6,11 +6,6 @@ import torch
 import torch.nn as nn
 
 
-__all__ = [
-    "GaussianDistanceWeight"
-]
-
-
 class GaussianDistanceWeight(nn.Module):
     def __init__(
             self,
