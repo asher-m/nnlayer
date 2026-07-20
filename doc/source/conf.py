@@ -16,6 +16,8 @@ release = '0.0.0'
 # -- Project root ------------------------------------------------------------
 
 import sys
+import re
+import inspect
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -49,3 +51,49 @@ autodoc_mock_imports = ['torch']
 html_theme = 'furo'
 html_static_path = ['static']
 html_css_files = []
+
+
+# -- Signature cleanup -------------------------------------------------------
+
+_ARG_LINE = re.compile(r'^\s*([*]{0,2}[A-Za-z_]\w*)\s*(?:\([^)]*\))?\s*:')
+
+def _signature_from_init_args(obj):
+    """Build a simple class signature from the Args section of __init__."""
+    init = getattr(obj, '__init__', None)
+    docstring = inspect.getdoc(init)
+    if not docstring:
+        return None
+
+    args = []
+    in_args = False
+    for line in docstring.splitlines():
+        stripped = line.strip()
+
+        if stripped in {'Args:', 'Arguments:', 'Parameters:'}:
+            in_args = True
+            continue
+
+        if not in_args:
+            continue
+
+        if stripped and not line.startswith((' ', '\t')):
+            break
+
+        match = _ARG_LINE.match(line)
+        if match:
+            args.append(match.group(1).lstrip('*'))
+
+    return f"({', '.join(args)})" if args else None
+
+def autodoc_process_signature(app, what, name, obj, options, signature, return_annotation):
+    if what != 'class':
+        return None
+
+    init_args_signature = _signature_from_init_args(obj)
+    if init_args_signature is None:
+        return None
+
+    return init_args_signature, return_annotation
+
+def setup(app):
+    app.connect('autodoc-process-signature', autodoc_process_signature)
