@@ -304,7 +304,10 @@ class DiffConvCubicBSpline(nn.Module):
 
         vectors = DiffConvCubicBSpline.integrate_b(x_a, x_b)
         vectors = vectors.permute(-2, *range(len(batch_shape)), -1)
+
+        data = torch.flip(data, tuple(range(-self.n_coordinates, 0)))
         data = seperable_contraction_batched(data, *vectors)
+
         return data
 
     @staticmethod
