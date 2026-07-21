@@ -123,8 +123,8 @@ class DiffConvCubicBSpline(nn.Module):
     """
 
     def __init__(
-            self,
-            n_coordinates: int,
+        self,
+        dx: torch.Tensor,
     ):
         r"""
         Applies a cubic B-spline convolution that is differentiable with respect
@@ -134,8 +134,18 @@ class DiffConvCubicBSpline(nn.Module):
         at supplied collocation points.
 
         Args:
+            dx (torch.Tensor):
+                Tensor of grid spacings in each dimension.
+
+        Shape:
+            ``dx`` must have shape ``(n_coordinates,)`` where ``n_coordinates`` is the
+            number of coordinates.
+
+        Attributes:
+            dx (torch.Tensor):
+                Tensor of grid spacings in each dimension from instantiation.
             n_coordinates (int):
-                Number of coordinate dimensions.
+                Number of coordinate dimensions, inferred from :attr:`dx`.
 
         In general, this module computes the convolution of a smooth cubic B-spline
         kernel against data. Consider a function representing data
@@ -223,14 +233,12 @@ class DiffConvCubicBSpline(nn.Module):
         This is a weighted sum over the grid, or equivalently the full tensor
         contraction of :math:`f` with :math:`K(\mathbf{x})`.
 
-        In this implementation, evaluation coordinates are supplied as translations
-        relative to the center of the middle cell of a local stencil normalized by
-        grid-cell units. The one-dimensional cubic B-spline is scaled to have support
-        radius ``1`` in these normalized units. Thus an evaluation offset in
-        ``[-0.5, 0.5]`` can overlap only the three cells centered at ``-1``,
-        ``0``, and ``1`` along each coordinate direction. For ``N`` coordinate
-        dimensions, each evaluation thus uses a local ``3 ** N`` tensor-product
-        stencil.
+        The cubic B-spline kernel is scaled to have support radius :attr:`dx` in each
+        dimension, thus a one-dimensional evaluation offset in 
+        ``[-0.5 * dx, 0.5 * dx]`` can overlap only the three cells centered at indices
+        ``-1``, ``0``, and ``1`` relative to the middle cell of the one-dimensional
+        stencil. Therefore, data must provide the ``3 ** N`` lattice of data about
+        the cell at ``x``.
 
         As a pedagogical note, we remark that there exist analytically straightforward
         though otherwise technically challenging extensions of this notion of discrete
@@ -238,16 +246,22 @@ class DiffConvCubicBSpline(nn.Module):
         tensor product grids, positive-dimension manifolds, or non-stationary kernels,
         but these are outside the scope of this class.
         """
-        if n_coordinates < 1:
+        if dx.ndim != 1:
             raise ValueError  # TODO: fill in this ValueError.
+        if dx.shape[0] < 1:
+            # TODO: fill in this ValueError; need to explain that n_coordinates,
+            # inferred from dx, must be greater than or equal to 1.
+            raise ValueError
 
         super().__init__()
-        self.n_coordinates = n_coordinates
+        self.dx = dx
+        self.n_coordinates = dx.shape[0]
 
     def forward(
         self,
-        data: torch.Tensor,
-        dx: torch.Tensor,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        x_eval: torch.Tensor,
     ) -> torch.Tensor:
         """
         Computes the tensor-product cubic B-spline convolution.
@@ -256,32 +270,35 @@ class DiffConvCubicBSpline(nn.Module):
         coordinate direction.
 
         Args:
-            data (torch.Tensor):
-                Tensor of data over support of kernel.
-            dx (torch.Tensor):
-                Tensor of translation of evaluation coordinates relative to data cell
-                centers.
+            x (torch.Tensor):
+                Tensor of coordinates of center cell in data.
+            y (torch.Tensor):
+                Tensor of data in ``3 ** N`` lattice about each coordinate in ``x``.
+            x_eval (torch.Tensor):
+                Tensor of evaluation coordinates.
 
         Shape:
-            ``data`` must have shape ``(*batch_shape, 3, ..., 3)``, with one
-            trailing extent-3 dimension per coordinate dimension. ``dx`` must have
-            shape ``(*batch_shape, n_coordinates)``.
+            ``x`` must have shape ``(*batch_shape, n_coordinates)``.
 
-        Each entry of ``dx`` is measured in grid-cell units relative to the center of
-        the middle cell in the corresponding coordinate direction. The cubic B-spline
-        is scaled so its one-dimensional support radius is one grid spacing. Thus, for
-        evaluation offsets in ``[-0.5, 0.5]``, the support intersects only the three
-        neighboring cells centered at ``-1``, ``0``, and ``1`` in each coordinate
-        direction. The convolution is thus evaluated from a local
-        ``3 ** n_coordinates`` tensor-product stencil.
+            ``y`` must have shape ``(*batch_shape, 3, ..., 3)``, with one trailing
+            extent-3 dimension per coordinate dimension.
+
+            ``x_eval`` must have shape ``(*batch_shape, n_coordinates)``.
+
+        The cubic B-spline kernel is scaled to have support radius :attr:`dx` in each
+        dimension, thus a one-dimensional evaluation offset in 
+        ``[-0.5 * dx, 0.5 * dx]`` can overlap only the three cells centered at indices
+        ``-1``, ``0``, and ``1`` relative to the middle cell of the one-dimensional
+        stencil. Therefore, ``y`` must provide the ``3 ** N`` lattice of data about
+        the cell at ``x``.
 
         Returns:
             torch.Tensor:
                 Tensor with shape ``batch_shape`` containing one convolution value per
                 evaluation point.
         """
-        batch_shape = data.shape[:-self.n_coordinates]
-        coord_shape = data.shape[-self.n_coordinates:]
+        batch_shape = y.shape[:-self.n_coordinates]
+        coord_shape = y.shape[-self.n_coordinates:]
 
         if coord_shape != (3,) * self.n_coordinates:
             # TODO: fill in this ValueError: data do not have the correct extent for
@@ -289,26 +306,26 @@ class DiffConvCubicBSpline(nn.Module):
             # kernel and scaling of tensor lattice in all dimensions by \Delta x_i.
             raise ValueError
 
-        if dx.shape[:-1] != batch_shape:
+        if x.shape[:-1] != batch_shape or x_eval.shape[:-1] != batch_shape:
             # TODO: fill in this ValueError: coordinates do not have right batch shape.
             raise ValueError
 
-        if dx.shape[-1] != self.n_coordinates:
+        if x.shape[-1] != self.n_coordinates or x_eval.shape[-1] != self.n_coordinates:
             # TODO: fill in this ValueError.
             raise ValueError
 
-        x_a = (dx.unsqueeze(-1).repeat(*((1,) * len(batch_shape)), 1, 3) 
-               + torch.arange(-1, 1 + 1) - 0.5)
-        x_b = (dx.unsqueeze(-1).repeat(*((1,) * len(batch_shape)), 1, 3) 
-               + torch.arange(-1, 1 + 1) + 0.5)
+        x_rel = (x_eval - x) / self.dx
+
+        x_a = x_rel.unsqueeze(-1) + torch.arange(-1, 1 + 1) - 0.5
+        x_b = x_rel.unsqueeze(-1) + torch.arange(-1, 1 + 1) + 0.5
 
         vectors = DiffConvCubicBSpline.integrate_b(x_a, x_b)
         vectors = vectors.permute(-2, *range(len(batch_shape)), -1)
 
-        data = torch.flip(data, tuple(range(-self.n_coordinates, 0)))
-        data = seperable_contraction_batched(data, *vectors)
+        y = torch.flip(y, tuple(range(-self.n_coordinates, 0)))
+        y = seperable_contraction_batched(y, *vectors)
 
-        return data
+        return y
 
     @staticmethod
     def integrate_b(
