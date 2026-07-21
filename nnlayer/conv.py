@@ -227,96 +227,128 @@ class DiffConvCubicBSpline(nn.Module):
         This is a weighted sum over the grid, or equivalently the full tensor
         contraction of :math:`f` with :math:`K(\mathbf{x})`.
 
+        In this implementation, evaluation coordinates are supplied as translations
+        relative to the center of the middle cell of a local stencil normalized by
+        grid-cell units. The one-dimensional cubic B-spline is scaled to have support
+        radius ``1`` in these normalized units. Thus an evaluation offset in
+        ``[-0.5, 0.5]`` can overlap only the three cells centered at ``-1``,
+        ``0``, and ``1`` along each coordinate direction. For ``N`` coordinate
+        dimensions, each evaluation thus uses a local ``3 ** N`` tensor-product
+        stencil.
+
         As a pedagogical note, we remark that there exist analytically straightforward
         though otherwise technically challenging extensions of this notion of discrete
         convolution to more general definitions of data and kernels, e.g., data on non-uniform
         tensor product grids, positive-dimension manifolds, or non-stationary kernels,
         but these are outside the scope of this class.
         """
+        if n_coordinates < 1:
+            raise ValueError  # TODO: fill in this ValueError.
+
         super().__init__()
         self.n_coordinates = n_coordinates
 
-    @staticmethod
-    def K(
+    def forward(
+        self,
         data: torch.Tensor,
-        xi: torch.Tensor,
-        yi: torch.Tensor,
-        ti: torch.Tensor
+        dx: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Compute convolution of data with tensor product cubic B-spline kernel of radius equal to cell diameter.
+        Computes the tensor-product cubic B-spline convolution.
 
-        Arguments:
-            data:       Tensor of shape (B, C, N, M) of data values about (t, x, y).
-            xi:         Tensor of shape (B,) of x index translation of kernel relative to data center.
-            yi:         Tensor of shape (B,) of y index translation of kernel relative to data center.
-            ti:         Tensor of shape (B,) of t index translation of kernel relative to data center.
+        The cubic B-spline kernel has radius equal to one grid spacing in each
+        coordinate direction.
+
+        Args:
+            data (torch.Tensor):
+                Tensor of data over support of kernel.
+            dx (torch.Tensor):
+                Tensor of translation of evaluation coordinates relative to data cell
+                centers.
+
+        Shape:
+            ``data`` must have shape ``(*batch_shape, 3, ..., 3)``, with one
+            trailing extent-3 dimension per coordinate dimension. ``dx`` must have
+            shape ``(*batch_shape, n_coordinates)``.
+
+        Each entry of ``dx`` is measured in grid-cell units relative to the center of
+        the middle cell in the corresponding coordinate direction. The cubic B-spline
+        is scaled so its one-dimensional support radius is one grid spacing. Thus, for
+        evaluation offsets in ``[-0.5, 0.5]``, the support intersects only the three
+        neighboring cells centered at ``-1``, ``0``, and ``1`` in each coordinate
+        direction. The convolution is thus evaluated from a local
+        ``3 ** n_coordinates`` tensor-product stencil.
+
+        Returns:
+            torch.Tensor:
+                Tensor with shape ``batch_shape`` containing one convolution value per
+                evaluation point.
         """
-        b, c, n, m = data.shape
-        if c != 3 or n != 3 or m != 3:
-            raise ValueError(f'Expected (C, N, M) = (3, 3, 3), got {c}!')
-        
-        bx, = xi.shape
-        by, = yi.shape
-        bt, = ti.shape
-        if bx != b or by != b or bt != b:
+        batch_shape = data.shape[:-self.n_coordinates]
+        coord_shape = data.shape[-self.n_coordinates:]
+
+        if coord_shape != (3,) * self.n_coordinates:
+            # TODO: fill in this ValueError: data do not have the correct extent for
+            # the support of the kernel; need to document/explain the support of the
+            # kernel and scaling of tensor lattice in all dimensions by \Delta x_i.
             raise ValueError
 
-        if torch.any(torch.abs(xi) > 0.5) or torch.any(torch.abs(yi) > 0.5) or torch.any(torch.abs(ti) > 0.5):
-            raise ValueError(f'Expected all(abs(xi, yi, ti) < (0.5, 0.5, 0.5))!')
+        if dx.shape[:-1] != batch_shape:
+            # TODO: fill in this ValueError: coordinates do not have right batch shape.
+            raise ValueError
 
-        return DiffConvCubicBSpline._K_impl(data, xi, yi, ti)
+        if dx.shape[-1] != self.n_coordinates:
+            # TODO: fill in this ValueError.
+            raise ValueError
 
-    @staticmethod
-    def _K_impl(
-        data: torch.Tensor,
-        xi: torch.Tensor,
-        yi: torch.Tensor,
-        ti: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Compute the spline convolution without input validation so it can be used under torch.func transforms.
-        """
+        x_a = (dx.unsqueeze(-1).repeat(*((1,) * len(batch_shape)), 1, 3) 
+               + torch.arange(-1, 1 + 1) - 0.5)
+        x_b = (dx.unsqueeze(-1).repeat(*((1,) * len(batch_shape)), 1, 3) 
+               + torch.arange(-1, 1 + 1) + 0.5)
 
-        dtype = data.dtype
-        device = data.device
-        coord = torch.arange(3, dtype=dtype, device=device)[None, :]
-
-        ta = coord - 1 - 1/2 - ti[:, None]
-        tb = coord - 1 + 1/2 - ti[:, None]
-        xa = coord - 1 - 1/2 - xi[:, None]
-        xb = coord - 1 + 1/2 - xi[:, None]
-        ya = coord - 1 - 1/2 - yi[:, None]
-        yb = coord - 1 + 1/2 - yi[:, None]
-
-        wt = DiffConvCubicBSpline.b(ta, tb)
-        wx = DiffConvCubicBSpline.b(xa, xb)
-        wy = DiffConvCubicBSpline.b(ya, yb)
-
-        w = wt[:, :, None, None] * wx[:, None, :, None] * wy[:, None, None, :]
-
-        return torch.einsum('bcnm,bcnm->b', data, w)
+        vectors = DiffConvCubicBSpline.integrate_b(x_a, x_b)
+        vectors = vectors.permute(-2, *range(len(batch_shape)), -1)
+        data = seperable_contraction_batched(data, *vectors)
+        return data
 
     @staticmethod
-    def b(
+    def integrate_b(
         x_a: torch.Tensor,
         x_b: torch.Tensor
     ):
         """
-        Compute the intergral of the cubic B-spline from x_a to x_b.
+        Computes the integral of the cubic B-spline from ``x_a`` to ``x_b``.
+
+        Args:
+            x_a (torch.Tensor):
+                Lower integration bound.
+            x_b (torch.Tensor):
+                Upper integration bound.
+
+        Returns:
+            torch.Tensor:
+                Integral of the cubic B-spline over ``[x_a, x_b]``.
         """
-        return DiffConvCubicBSpline._b_half(x_b) - DiffConvCubicBSpline._b_half(x_a)
+        return (
+            DiffConvCubicBSpline._integrate_b_half(x_b)
+            - DiffConvCubicBSpline._integrate_b_half(x_a)
+        )
 
     @staticmethod
-    def _b_half(
+    def _integrate_b_half(
         x: torch.Tensor
     ):
         """
-        Compute the integral of the cubic B-spline from -inf to x.
-        """
-        if x.ndim > 2:
-            raise ValueError(f'Expected b.ndim < 3, got {x.ndim}!')
+        Computes the integral of the cubic B-spline from ``-inf`` to ``x``.
 
+        Args:
+            x (torch.Tensor):
+                Upper integration bound.
+
+        Returns:
+            torch.Tensor:
+                Integral of the cubic B-spline from ``-inf`` to ``x``.
+        """
         idx_0 = x < -1
         idx_1 = torch.logical_and(-1 <= x, x < -0.5)
         idx_2 = torch.logical_and(-0.5 <= x, x < 0.5)
@@ -335,7 +367,11 @@ class DiffConvCubicBSpline(nn.Module):
                 torch.where(
                     idx_2,
                     out_2,
-                    torch.where(idx_3, out_3, torch.ones_like(x))
+                    torch.where(
+                        idx_3,
+                        out_3,
+                        torch.ones_like(x)
+                    )
                 )
             )
         )
