@@ -2,7 +2,6 @@
 Convolutional layers and helpers.
 """
 
-import functools
 import torch
 import torch.nn as nn
 
@@ -48,8 +47,6 @@ def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
         torch.Tensor:
             Tensor resulting from contracting ``data`` over each supplied vector.
     """
-    # d.shape == coordinate_shape
-    # vectors[k].shape == (coordinate_shape[k],)
     for i, v in enumerate(vectors):
         if v.shape != (data.shape[i - len(vectors)],):
             raise ValueError(
@@ -99,7 +96,6 @@ def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
         unbatched) weighting tensor against ``data``.
     """
     batch_shape = data.shape[:-len(vectors)]
-    flat_shape = functools.reduce(lambda x, y: x * y, batch_shape)
 
     for i, v in enumerate(vectors):
         if v.shape != (*batch_shape, data.shape[i - len(vectors)]):
@@ -113,8 +109,8 @@ def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
         seperable_contraction,
         in_dims=(0, *([0] * len(vectors))),
     )(
-        data.reshape((flat_shape, *data.shape[-len(vectors):])),
-        *(v.reshape((flat_shape, v.shape[-1])) for v in vectors)
+        data.reshape((-1, *data.shape[-len(vectors):])),
+        *(v.reshape((-1, v.shape[-1])) for v in vectors)
     )
     data = data.reshape(batch_shape)
 
