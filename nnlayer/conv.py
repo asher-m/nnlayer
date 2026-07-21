@@ -117,6 +117,31 @@ def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
     return data
 
 
+def get_nearest_index(x: torch.Tensor, y: torch.Tensor):
+    r"""
+    Get index in ``x`` nearest to ``y``.
+
+    Specifically,
+
+    .. math::
+        \texttt{index}_i = \operatorname*{arg\,min}_j | x_j - y_i |
+
+    Args:
+        x (torch.Tensor):
+            Array in which to find indices.
+        y (torch.Tensor):
+            Array from which to compare.
+    """
+    index_right = torch.searchsorted(x, y)
+    index_right = index_right.clamp(max=x.numel() - 1)
+    index_left = (index_right - 1).clamp(min=0)
+
+    dist_right = torch.abs(y - x[index_right])
+    dist_left = torch.abs(y - x[index_left])
+
+    return torch.where(dist_left <= dist_right, index_left, index_right)
+
+
 class DiffConvCubicBSpline(nn.Module):
     """
     Differentiable cubic B-spline convolution module.
@@ -391,3 +416,10 @@ class DiffConvCubicBSpline(nn.Module):
                 )
             )
         )
+
+    @staticmethod
+    def get_nearest_index(x, y):
+        """
+        Alias of :func:`nnlayer.conv.get_nearest_index`.
+        """
+        return get_nearest_index(x, y)
