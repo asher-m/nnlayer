@@ -49,7 +49,7 @@ autodoc_mock_imports = ['torch']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'furo'
-html_static_path = ['static']
+html_static_path = ['static'] if (Path(__file__).parent / 'static').is_dir() else []
 html_css_files = []
 
 
