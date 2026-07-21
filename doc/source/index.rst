@@ -19,6 +19,7 @@ serving to enable algorithms to better learn target problems.
 
    self
    getting-started
+   tutorial
    conv
    linear
    weight

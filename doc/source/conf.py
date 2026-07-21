@@ -30,6 +30,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
+    'myst_nb',
+    'sphinx_collections'
 ]
 
 templates_path = ['templates']
@@ -40,9 +42,27 @@ exclude_patterns = []
 
 autosummary_generate = True
 autosummary_imported_members = True
+
 autodoc_typehints = 'description'
 autoclass_content = 'both'
 autodoc_mock_imports = ['torch']
+
+# myst_nb
+nb_execution_mode = 'auto'
+myst_enable_extensions = [
+    'amsmath',
+    'dollarmath',
+]
+
+# sphinx_collections
+collections_target = 'collections'
+collections_final_clean = False
+collections = {
+   'tutorial': {
+      'driver': 'copy_folder',
+      'source': '../../tutorial/',
+   }
+}
 
 
 # -- Options for HTML output -------------------------------------------------

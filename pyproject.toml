@@ -21,6 +21,7 @@ doc = [
     "sphinx",
     "furo",
     "myst-nb",
+    "sphinx-collections",
     "jupyter",
     "jupyterlab",
     "matplotlib",
