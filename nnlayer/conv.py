@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 
-def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
+def separable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
     r"""
     Contracts ``data`` against a weighting tensor defined by a sequence of
     one-dimensional vectors.
@@ -29,7 +29,7 @@ def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
         **unbatched** weighting tensors.
 
         To perform contractions of **batched** data and **batched** weighting tensors,
-        see :func:`seperable_contraction_batched`.
+        see :func:`separable_contraction_batched`.
 
     Args:
         data (torch.Tensor):
@@ -47,6 +47,13 @@ def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
         torch.Tensor:
             Tensor resulting from contracting ``data`` over each supplied vector.
     """
+    if len(vectors) > data.ndim:
+        raise ValueError(
+            f'Got too many vectors for contraction: '
+            f'{len(vectors)} vectors for data of shape {(*data.shape,)}, '
+            f'expected at most {data.ndim} vectors!'
+        )
+
     for i, v in enumerate(vectors):
         if v.shape != (data.shape[i - len(vectors)],):
             raise ValueError(
@@ -60,9 +67,9 @@ def seperable_contraction(data: torch.Tensor, *vectors: torch.Tensor):
     return data
 
 
-def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
+def separable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
     r"""
-    Applies :func:`seperable_contraction` over a batch of tensors and vectors.
+    Applies :func:`separable_contraction` over a batch of tensors and vectors.
 
     Let a **batched** weighting tensor :math:`W` given by the tensor product of
     **batched** :math:`\texttt{vectors}_b = \{ u_b, v_b, w_b, \dots \}`,
@@ -92,9 +99,22 @@ def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
             Batched contraction result.
 
     See Also:
-        See :func:`seperable_contraction` for a contraction of **one** (i.e.,
+        See :func:`separable_contraction` for a contraction of **one** (i.e.,
         unbatched) weighting tensor against ``data``.
     """
+    if data.ndim < 1:
+        raise ValueError(
+            f'Got data with too few dimensions for batched contraction: '
+            f'data.ndim = {data.ndim}, expected data.ndim >= 1!'
+        )
+
+    if len(vectors) > data.ndim:
+        raise ValueError(
+            f'Got too many vectors for batched contraction: '
+            f'{len(vectors)} vectors for data of shape {(*data.shape,)}, '
+            f'expected at most {data.ndim} vectors!'
+        )
+
     batch_shape = data.shape[:-len(vectors)]
 
     for i, v in enumerate(vectors):
@@ -106,7 +126,7 @@ def seperable_contraction_batched(data: torch.Tensor, *vectors: torch.Tensor):
             )
 
     data = torch.vmap(
-        seperable_contraction,
+        separable_contraction,
         in_dims=(0, *([0] * len(vectors))),
     )(
         data.reshape((-1, *data.shape[-len(vectors):])),
@@ -128,7 +148,7 @@ def get_nearest_index(x: torch.Tensor, y: torch.Tensor):
 
     Args:
         x (torch.Tensor):
-            Array in which to find indices.
+            Array in which to find indices; must be 1-d, ascending, and non-empty.
         y (torch.Tensor):
             Array from which to compare.
     """
@@ -167,7 +187,7 @@ class DiffConvCubicBSpline(nn.Module):
             number of coordinates.
 
         Attributes:
-            dx (torch.Tensor):
+            dx (torch.nn.Buffer):
                 Tensor of grid spacings in each dimension from instantiation.
             n_coordinates (int):
                 Number of coordinate dimensions, inferred from :attr:`dx`.
@@ -272,14 +292,28 @@ class DiffConvCubicBSpline(nn.Module):
         but these are outside the scope of this class.
         """
         if dx.ndim != 1:
-            raise ValueError  # TODO: fill in this ValueError.
+            raise ValueError(
+                f'Got dx with incompatible number of dimensions: '
+                f'dx.ndim = {dx.ndim}, expected 1!'
+            )
+        if not torch.all(torch.isfinite(dx)):
+            raise ValueError(
+                f'Got dx with non-finite values: '
+                f'dx = {dx}, expected all entries to be finite!'
+            )
+        if not torch.all(dx > 0):
+            raise ValueError(
+                f'Got dx with non-positive values: '
+                f'dx = {dx}, expected all entries to be greater than 0!'
+            )
         if dx.shape[0] < 1:
-            # TODO: fill in this ValueError; need to explain that n_coordinates,
-            # inferred from dx, must be greater than or equal to 1.
-            raise ValueError
+            raise ValueError(
+                f'Got dx with no coordinate dimensions: '
+                f'n_coordinates = dx.shape[0] = {dx.shape[0]}, expected at least 1!'
+            )
 
         super().__init__()
-        self.dx = dx
+        self.dx = nn.Buffer(dx)
         self.n_coordinates = dx.shape[0]
 
     def forward(
@@ -287,12 +321,17 @@ class DiffConvCubicBSpline(nn.Module):
         x: torch.Tensor,
         y: torch.Tensor,
         x_eval: torch.Tensor,
+        do_vmap_incompatible_checks: bool = True
     ) -> torch.Tensor:
         """
         Computes the tensor-product cubic B-spline convolution.
 
-        The cubic B-spline kernel has radius equal to one grid spacing in each
-        coordinate direction.
+        See Also:
+            Refer to :meth:`validate_inputs` for additional input verification in
+            ``vmap``-incompatible ways.
+
+            These checks are left out of :meth:`forward` in order to preserve
+            usability.
 
         Args:
             x (torch.Tensor):
@@ -301,6 +340,9 @@ class DiffConvCubicBSpline(nn.Module):
                 Tensor of data in ``3 ** N`` lattice about each coordinate in ``x``.
             x_eval (torch.Tensor):
                 Tensor of evaluation coordinates.
+            do_vmap_incompatible_checks (bool, optional):
+                Do checks that break ``vmap`` compatibility.  On by default; may be
+                by passing ``False`` to allow ``vmap`` for e.g. ``jacrev``.
 
         Shape:
             ``x`` must have shape ``(*batch_shape, n_coordinates)``.
@@ -309,6 +351,9 @@ class DiffConvCubicBSpline(nn.Module):
             extent-3 dimension per coordinate dimension.
 
             ``x_eval`` must have shape ``(*batch_shape, n_coordinates)``.
+
+        Inputs must have the same device and dtype.  In particular, ``x`` and
+        ``x_eval`` are checked against ``y``.
 
         The cubic B-spline kernel is scaled to have support radius :attr:`dx` in each
         dimension, thus a one-dimensional evaluation offset in 
@@ -325,32 +370,159 @@ class DiffConvCubicBSpline(nn.Module):
         batch_shape = y.shape[:-self.n_coordinates]
         coord_shape = y.shape[-self.n_coordinates:]
 
-        if coord_shape != (3,) * self.n_coordinates:
-            # TODO: fill in this ValueError: data do not have the correct extent for
-            # the support of the kernel; need to document/explain the support of the
-            # kernel and scaling of tensor lattice in all dimensions by \Delta x_i.
-            raise ValueError
-
-        if x.shape[:-1] != batch_shape or x_eval.shape[:-1] != batch_shape:
-            # TODO: fill in this ValueError: coordinates do not have right batch shape.
-            raise ValueError
-
-        if x.shape[-1] != self.n_coordinates or x_eval.shape[-1] != self.n_coordinates:
-            # TODO: fill in this ValueError.
-            raise ValueError
+        self._validate_inputs(x, y, x_eval)
+        # FIXME: this is probably unsuitable long-term as users will compose this layer in ways
+        # that these checks cannot be explicitly disabled.
+        if do_vmap_incompatible_checks:
+            try:
+                self._validate_inputs_vmap_incompatible(x, y, x_eval)
+            except Exception as error:
+                if (
+                    str(error).startswith('vmap:') and
+                    'data-dependent control flow' in str(error)
+                ):
+                    raise ValueError(
+                        f'Attempted to do vmap incompatible checks with vmap! '
+                        f'Did you mean `do_vmap_incompatible_checks=False`?'
+                    )
+                else:
+                    raise
 
         x_rel = (x_eval - x) / self.dx
 
-        x_a = x_rel.unsqueeze(-1) + torch.arange(-1, 1 + 1) - 0.5
-        x_b = x_rel.unsqueeze(-1) + torch.arange(-1, 1 + 1) + 0.5
+        offsets = torch.arange(-1, 1 + 1, device=x_rel.device, dtype=x_rel.dtype)
+        x_a = offsets - x_rel.unsqueeze(-1) - 0.5
+        x_b = offsets - x_rel.unsqueeze(-1) + 0.5
 
         vectors = DiffConvCubicBSpline.integrate_b(x_a, x_b)
         vectors = vectors.permute(-2, *range(len(batch_shape)), -1)
 
-        y = torch.flip(y, tuple(range(-self.n_coordinates, 0)))
-        y = seperable_contraction_batched(y, *vectors)
+        y = separable_contraction_batched(y, *vectors)
 
         return y
+
+    def _validate_inputs(
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        x_eval: torch.Tensor,
+    ):
+        """
+        Perform sanity checks on inputs.
+
+        See Also:
+            :meth:`_validate_inputs_vmap_incompatible` contains ``vmap``-incompatible
+            checks.
+
+        Args:
+            x (torch.Tensor):
+                Tensor of coordinates of center cell in data.
+            y (torch.Tensor):
+                Tensor of data in ``3 ** N`` lattice about each coordinate in ``x``.
+            x_eval (torch.Tensor):
+                Tensor of evaluation coordinates.
+        """
+        batch_shape = y.shape[:-self.n_coordinates]
+        coord_shape = y.shape[-self.n_coordinates:]
+
+        if coord_shape != (3,) * self.n_coordinates:
+            raise ValueError(
+                f'Got y with incompatible coordinate stencil shape: '
+                f'coordinate shape y[-n_coordinates:] = {(*coord_shape,)}, '
+                f'expected {(3,) * self.n_coordinates} for n_coordinates = {self.n_coordinates}!'
+            )
+
+        if x.ndim < 1:
+            raise ValueError(
+                f'Got x with no coordinate dimension: '
+                f'x.ndim = {x.ndim}, expected x.shape[-1] = {self.n_coordinates}!'
+            )
+
+        if x_eval.ndim < 1:
+            raise ValueError(
+                f'Got x_eval with no coordinate dimension: '
+                f'x_eval.ndim = {x_eval.ndim}, expected x_eval.shape[-1] = {self.n_coordinates}!'
+            )
+
+        if x.shape[:-1] != batch_shape:
+            raise ValueError(
+                f'Got x with incompatible batch shape: '
+                f'x.shape[:-1] = {(*x.shape[:-1],)}, expected {(*batch_shape,)} '
+                f'from y.shape[:-{self.n_coordinates}]!'
+            )
+
+        if x_eval.shape[:-1] != batch_shape:
+            raise ValueError(
+                f'Got x_eval with incompatible batch shape: '
+                f'x_eval.shape[:-1] = {(*x_eval.shape[:-1],)}, expected {(*batch_shape,)} '
+                f'from y.shape[:-{self.n_coordinates}]!'
+            )
+
+        if x.shape[-1] != self.n_coordinates:
+            raise ValueError(
+                f'Got x with incompatible coordinate dimension: '
+                f'x.shape[-1] = {x.shape[-1]}, expected x.shape[-1] = {self.n_coordinates}!'
+            )
+
+        if x_eval.shape[-1] != self.n_coordinates:
+            raise ValueError(
+                f'Got x_eval with incompatible coordinate dimension: '
+                f'x_eval.shape[-1] = {x_eval.shape[-1]}, expected x_eval.shape[-1] = {self.n_coordinates}!'
+            )
+
+        if x.dtype != y.dtype:
+            raise ValueError(
+                f'Got x with incompatible dtype: '
+                f'x.dtype = {x.dtype}, expected x.dtype = y.dtype = {y.dtype}!'
+            )
+
+        if x_eval.dtype != y.dtype:
+            raise ValueError(
+                f'Got x_eval with incompatible dtype: '
+                f'x_eval.dtype = {x_eval.dtype}, expected x_eval.dtype = y.dtype = {y.dtype}!'
+            )
+
+        if x.device != y.device:
+            raise ValueError(
+                f'Got x with incompatible device: '
+                f'x.device = {x.device}, expected x.device = y.device = {y.device}!'
+            )
+
+        if x_eval.device != y.device:
+            raise ValueError(
+                f'Got x_eval with incompatible device: '
+                f'x_eval.device = {x_eval.device}, expected x_eval.device = y.device = {y.device}!'
+            )
+
+    # FIXME: this is probably unsuitable long-term as users will compose this layer in ways
+    # that these checks cannot be explicitly disabled.
+    def _validate_inputs_vmap_incompatible(
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        x_eval: torch.Tensor,
+    ):
+        """
+        Perform sanity checks on inputs in ``vmap``-incompatible ways.
+
+        See Also:
+            :meth:`_validate_inputs` contains all other checks.
+
+        Args:
+            x (torch.Tensor):
+                Tensor of coordinates of center cell in data.
+            y (torch.Tensor):
+                Tensor of data in ``3 ** N`` lattice about each coordinate in ``x``.
+            x_eval (torch.Tensor):
+                Tensor of evaluation coordinates.
+        """
+        x_rel_abs = torch.abs(x_eval - x) / self.dx
+        if torch.any(x_rel_abs > 0.5):
+            raise ValueError(
+                f'Got x_eval outside the local stencil centered at x: '
+                f'max(abs((x_eval - x) / dx)) = {torch.max(x_rel_abs)}, '
+                f'expected at most 0.5!'
+            )
 
     @staticmethod
     def integrate_b(
